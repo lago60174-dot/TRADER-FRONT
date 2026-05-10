@@ -3,9 +3,9 @@ import type {
   TradingSignal, StrategyRunRequest, RiskStatus, RiskSettings, RiskSettingsUpdate,
   NotificationLog, SubscriptionStatus, TokenResponse,
 } from "../types";
-import { DEMO_TOKEN, mockApiResponse } from "./mock";
 
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8000";
+
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "https://trader-rapv.onrender.com/";
 const TOKEN_KEY = "fx_token";
 const isBrowser = typeof window !== "undefined";
 
