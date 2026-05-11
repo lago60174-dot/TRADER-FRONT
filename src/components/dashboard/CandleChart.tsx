@@ -1,626 +1,282 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
 import { api } from "../../api/client";
-
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
-
-import {
-  fmtSymbol,
-  STRATEGY_LABELS,
-} from "../../lib/format";
-
+import { fmtSymbol } from "../../lib/format";
 import type { TradeRecord } from "../../types";
 
-const PAIRS = [
-  "EUR_USD",
-  "GBP_USD",
-  "USD_JPY",
-  "GBP_JPY",
-  "EUR_GBP",
-  "AUD_USD",
-  "USD_CAD",
-  "NZD_USD",
-];
+/* ───────────────────────────── */
 
-const GRANULARITIES = [
-  "M5",
-  "M15",
-  "M30",
-  "H1",
-  "H4",
-  "D",
-] as const;
+export function CandleChart({ trades }: { trades: TradeRecord[] }) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
-export function CandleChart({
-  trades,
-}: {
-  trades: TradeRecord[];
-}) {
-  const symbols = useMemo(() => {
-    const set = new Set<string>(PAIRS);
+  const [symbol, setSymbol] = useState("EUR_USD");
+  const [granularity, setGranularity] = useState("H1");
 
-    trades.forEach((t) => set.add(t.symbol));
+  /* ── CAMERA (TRADINGVIEW STYLE) ── */
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [drag, setDrag] = useState<number | null>(null);
 
-    return [...set];
-  }, [trades]);
-
-  const [symbol, setSymbol] = useState<string>(
-    symbols[0] ?? "EUR_USD"
-  );
-
-  const [granularity, setGranularity] =
-    useState<string>("H1");
+  const [mouse, setMouse] = useState<{ x: number; y: number } | null>(null);
 
   const candlesQuery = useQuery({
     queryKey: ["candles", symbol, granularity],
-
-    queryFn: () =>
-      api.getCandles(
-        symbol,
-        granularity,
-        120
-      ),
-
-    refetchInterval: 30_000,
-    staleTime: 15_000,
+    queryFn: () => api.getCandles(symbol, granularity, 120),
   });
 
-  const tradesForSymbol = trades.filter(
-    (t) => t.symbol === symbol
-  );
+  const candles =
+    candlesQuery.data?.candles?.map((c) => ({
+      t: c.t,
+      o: c.o,
+      h: c.h,
+      l: c.l,
+      c: c.c,
+    })) ?? [];
 
-  // ✅ CORRIGÉ
-  const candles = (
-    candlesQuery.data?.candles ?? []
-  ).map((c) => ({
-    t: c.t,
-    o: c.o,
-    h: c.h,
-    l: c.l,
-    c: c.c,
-  }));
+  const tradesForSymbol = trades.filter((t) => t.symbol === symbol);
 
-  // ✅ PLUS DE source mock
-  const source = "oanda";
-
-  const isLoading = candlesQuery.isLoading;
-
-  // Layout
   const W = 920;
   const H = 360;
 
-  const padL = 12;
-  const padR = 62;
-  const padT = 18;
+  const padL = 50;
+  const padR = 60;
+  const padT = 20;
   const padB = 30;
 
-  const innerW = W - padL - padR;
+  const innerW = (W - padL - padR) * zoom;
   const innerH = H - padT - padB;
 
-  if (isLoading || !candles.length) {
+  if (!candles.length) {
     return (
-      <div className="space-y-4 rounded-2xl border border-border/40 bg-card/60 p-4 backdrop-blur-xl shadow-[0_0_40px_rgba(0,0,0,0.35)]">
-        <Toolbar
-          symbol={symbol}
-          setSymbol={setSymbol}
-          symbols={symbols}
-          granularity={granularity}
-          setGranularity={setGranularity}
-          source={source}
-          count={tradesForSymbol.length}
-        />
-
-        <div className="flex h-[360px] items-center justify-center rounded-2xl border border-border/50 bg-[#0b1220] text-sm text-muted-foreground">
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Loading market data...
-            </>
-          ) : (
-            "No data"
-          )}
-        </div>
+      <div className="flex h-[360px] items-center justify-center text-slate-400">
+        <Loader2 className="animate-spin" />
       </div>
     );
   }
 
-  const count = candles.length;
-  const cw = innerW / count;
-
-  const lows = candles.map((c) => c.l);
-  const highs = candles.map((c) => c.h);
-
-  let yMin = Math.min(...lows);
-  let yMax = Math.max(...highs);
+  /* ── PRICE RANGE ── */
+  let yMin = Math.min(...candles.map((c) => c.l));
+  let yMax = Math.max(...candles.map((c) => c.h));
 
   tradesForSymbol.forEach((t) => {
-    yMin = Math.min(
-      yMin,
-      t.entry_price,
-      t.stop_loss,
-      t.take_profit
-    );
-
-    yMax = Math.max(
-      yMax,
-      t.entry_price,
-      t.stop_loss,
-      t.take_profit
-    );
+    yMin = Math.min(yMin, t.entry_price, t.stop_loss, t.take_profit);
+    yMax = Math.max(yMax, t.entry_price, t.stop_loss, t.take_profit);
   });
 
   const range = yMax - yMin || 1;
-
   yMin -= range * 0.05;
   yMax += range * 0.05;
 
-  const yScale = (v: number) =>
-    padT +
-    ((yMax - v) / (yMax - yMin)) *
-      innerH;
+  const y = (v: number) =>
+    padT + ((yMax - v) / (yMax - yMin)) * innerH;
 
-  const tMin = candles[0].t;
+  const candleW = innerW / candles.length;
 
-  const tMax =
-    candles[candles.length - 1].t +
-    60 * 60 * 1000;
+  const x = (i: number) =>
+    padL + i * candleW + candleW / 2 + panX;
 
-  const xForTime = (iso: string) => {
-    const ts = Math.min(
-      tMax - 1,
-      Math.max(tMin, new Date(iso).getTime())
-    );
+  /* ── EVENTS ── */
 
-    return (
-      padL +
-      ((ts - tMin) / (tMax - tMin)) *
-        innerW
+  const onWheel = (e: any) => {
+    e.preventDefault();
+    setZoom((z) =>
+      Math.min(4, Math.max(0.5, z - e.deltaY * 0.001))
     );
   };
 
-  const inRange = tradesForSymbol.filter(
-    (t) => {
-      const ts = new Date(
-        t.opened_at
-      ).getTime();
+  const onMouseDown = (e: any) => setDrag(e.clientX);
 
-      return ts >= tMin && ts <= tMax;
+  const onMouseMove = (e: any) => {
+    setMouse({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
+
+    if (drag !== null) {
+      setPanX((p) => p + (e.clientX - drag));
+      setDrag(e.clientX);
     }
-  );
+  };
 
-  const markers = inRange.length
-    ? inRange.map((t) => ({
-        trade: t,
-        x: xForTime(t.opened_at),
-      }))
-    : tradesForSymbol.map((t, i) => ({
-        trade: t,
-        x:
-          padL +
-          ((i + 0.5) /
-            Math.max(
-              1,
-              tradesForSymbol.length
-            )) *
-            innerW,
-      }));
+  const onMouseUp = () => setDrag(null);
 
-  const ticks = Array.from(
-    { length: 5 },
-    (_, i) =>
-      yMin +
-      ((yMax - yMin) * i) / 4
-  );
+  const hovered = mouse
+    ? Math.floor((mouse.x - padL) / candleW)
+    : -1;
 
-  const fmtPrice = (v: number) =>
-    v.toFixed(
-      symbol.includes("JPY") ? 3 : 5
-    );
+  /* ───────────────────────────── */
 
   return (
-    <div className="space-y-4 rounded-2xl border border-border/40 bg-card/60 p-4 backdrop-blur-xl shadow-[0_0_40px_rgba(0,0,0,0.35)]">
-      <Toolbar
-        symbol={symbol}
-        setSymbol={setSymbol}
-        symbols={symbols}
-        granularity={granularity}
-        setGranularity={setGranularity}
-        source={source}
-        count={markers.length}
-      />
+    <div className="rounded-2xl border border-white/10 bg-[#050814] p-3">
+      {/* HEADER */}
+      <div className="mb-2 flex justify-between text-xs text-slate-400">
+        <div>{fmtSymbol(symbol)}</div>
+        <div>{candles.length} candles</div>
+      </div>
 
-      <div className="w-full overflow-x-auto rounded-2xl border border-border/50 bg-[#0b1220] p-3 shadow-2xl">
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          className="block min-w-[640px] w-full"
-          preserveAspectRatio="none"
-          style={{ height: H }}
-        >
-          {/* DEFINITIONS */}
-          <defs>
-            <linearGradient
-              id="chartBg"
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="1"
-            >
-              <stop
-                offset="0%"
-                stopColor="#0f172a"
-              />
+      {/* CHART */}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={() => setMouse(null)}
+      >
+        {/* BACKGROUND GRID (TradingView style) */}
+        {Array.from({ length: 6 }).map((_, i) => {
+          const v = yMin + ((yMax - yMin) * i) / 5;
 
-              <stop
-                offset="100%"
-                stopColor="#020617"
-              />
-            </linearGradient>
-
-            <linearGradient
-              id="gridFade"
-              x1="0"
-              y1="0"
-              x2="1"
-              y2="0"
-            >
-              <stop
-                offset="0%"
-                stopColor="#334155"
-                stopOpacity="0.1"
-              />
-
-              <stop
-                offset="100%"
-                stopColor="#334155"
-                stopOpacity="0.4"
-              />
-            </linearGradient>
-          </defs>
-
-          {/* BACKGROUND */}
-          <rect
-            x={0}
-            y={0}
-            width={W}
-            height={H}
-            fill="url(#chartBg)"
-            rx={16}
-          />
-
-          {/* GRID */}
-          {ticks.map((v, i) => (
+          return (
             <g key={i}>
               <line
                 x1={padL}
                 x2={W - padR}
-                y1={yScale(v)}
-                y2={yScale(v)}
-                stroke="url(#gridFade)"
+                y1={y(v)}
+                y2={y(v)}
+                stroke="#1f2937"
+              />
+              <text
+                x={W - padR + 5}
+                y={y(v)}
+                fill="#64748b"
+                fontSize="10"
+              >
+                {v.toFixed(2)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* CANDLES */}
+        {candles.map((c, i) => {
+          const cx = x(i);
+          const up = c.c >= c.o;
+          const color = up ? "#22c55e" : "#ef4444";
+
+          const bodyTop = y(Math.max(c.o, c.c));
+          const bodyH = Math.max(1, Math.abs(y(c.o) - y(c.c)));
+
+          const bw = Math.max(2, candleW * 0.55);
+
+          const isHover = i === hovered;
+
+          return (
+            <g key={i}>
+              {/* wick */}
+              <line
+                x1={cx}
+                x2={cx}
+                y1={y(c.h)}
+                y2={y(c.l)}
+                stroke={color}
+                opacity={isHover ? 1 : 0.7}
+              />
+
+              {/* body */}
+              <rect
+                x={cx - bw / 2}
+                y={bodyTop}
+                width={bw}
+                height={bodyH}
+                fill={color}
+                opacity={up ? 0.9 : 0.75}
+                style={{
+                  filter: isHover
+                    ? `drop-shadow(0 0 6px ${color})`
+                    : "none",
+                }}
+              />
+            </g>
+          );
+        })}
+
+        {/* SL / TP + RISK BOX */}
+        {tradesForSymbol.map((t, i) => {
+          const entryY = y(t.entry_price);
+          const slY = y(t.stop_loss);
+          const tpY = y(t.take_profit);
+
+          const color = t.direction === "BUY" ? "#22c55e" : "#ef4444";
+
+          return (
+            <g key={i}>
+              {/* entry */}
+              <line
+                x1={padL}
+                x2={W - padR}
+                y1={entryY}
+                y2={entryY}
+                stroke={color}
                 strokeDasharray="3 3"
               />
 
-              <text
-                x={W - padR + 8}
-                y={yScale(v) + 3}
-                fontSize="10"
-                fill="#94a3b8"
-                className="tabular"
-              >
-                {fmtPrice(v)}
-              </text>
+              {/* SL */}
+              <line
+                x1={padL}
+                x2={W - padR}
+                y1={slY}
+                y2={slY}
+                stroke="#ef4444"
+                strokeDasharray="4 4"
+              />
+
+              {/* TP */}
+              <line
+                x1={padL}
+                x2={W - padR}
+                y1={tpY}
+                y2={tpY}
+                stroke="#22c55e"
+                strokeDasharray="4 4"
+              />
+
+              {/* risk zone */}
+              <rect
+                x={padL}
+                y={Math.min(slY, tpY)}
+                width={W - padL - padR}
+                height={Math.abs(tpY - slY)}
+                fill={color}
+                opacity={0.05}
+              />
             </g>
-          ))}
+          );
+        })}
 
-          {/* CANDLES */}
-          {candles.map((c, i) => {
-            const x =
-              padL +
-              i * cw +
-              cw / 2;
+        {/* CROSSHAIR */}
+        {mouse && (
+          <g>
+            <line
+              x1={mouse.x}
+              x2={mouse.x}
+              y1={0}
+              y2={H}
+              stroke="#94a3b8"
+              strokeDasharray="3 3"
+            />
+            <line
+              x1={0}
+              x2={W}
+              y1={mouse.y}
+              y2={mouse.y}
+              stroke="#94a3b8"
+              strokeDasharray="3 3"
+            />
+          </g>
+        )}
+      </svg>
 
-            const up = c.c >= c.o;
-
-            const color = up
-              ? "#10b981"
-              : "#ef4444";
-
-            const yOpen = yScale(c.o);
-            const yClose = yScale(c.c);
-
-            const yHigh = yScale(c.h);
-            const yLow = yScale(c.l);
-
-            const bodyTop = Math.min(
-              yOpen,
-              yClose
-            );
-
-            const bodyH = Math.max(
-              1.5,
-              Math.abs(yClose - yOpen)
-            );
-
-            const bw = Math.max(
-              2,
-              cw * 0.65
-            );
-
-            return (
-              <g key={i}>
-                <line
-                  x1={x}
-                  x2={x}
-                  y1={yHigh}
-                  y2={yLow}
-                  stroke={color}
-                  strokeWidth={1.1}
-                />
-
-                <rect
-                  x={x - bw / 2}
-                  y={bodyTop}
-                  width={bw}
-                  height={bodyH}
-                  fill={color}
-                  rx={1.5}
-                  opacity={0.95}
-                  style={{
-                    transition:
-                      "all 0.3s ease",
-                    filter: `drop-shadow(0 0 5px ${color})`,
-                  }}
-                />
-              </g>
-            );
-          })}
-
-          {/* TRADE MARKERS */}
-          {markers.map(
-            ({ trade, x }) => {
-              const buy =
-                trade.direction ===
-                "BUY";
-
-              const color = buy
-                ? "#10b981"
-                : "#ef4444";
-
-              const y = yScale(
-                trade.entry_price
-              );
-
-              const ySL = yScale(
-                trade.stop_loss
-              );
-
-              const yTP = yScale(
-                trade.take_profit
-              );
-
-              return (
-                <g key={trade.id}>
-                  <line
-                    x1={x}
-                    x2={x}
-                    y1={
-                      Math.min(
-                        y,
-                        yTP,
-                        ySL
-                      ) - 2
-                    }
-                    y2={
-                      Math.max(
-                        y,
-                        yTP,
-                        ySL
-                      ) + 2
-                    }
-                    stroke={color}
-                    strokeOpacity={0.35}
-                    strokeDasharray="2 3"
-                  />
-
-                  <line
-                    x1={x - 6}
-                    x2={x + 6}
-                    y1={ySL}
-                    y2={ySL}
-                    stroke="#ef4444"
-                    strokeOpacity={0.8}
-                    strokeWidth={1.5}
-                  />
-
-                  <line
-                    x1={x - 6}
-                    x2={x + 6}
-                    y1={yTP}
-                    y2={yTP}
-                    stroke="#10b981"
-                    strokeOpacity={0.8}
-                    strokeWidth={1.5}
-                  />
-
-                  <polygon
-                    points={
-                      buy
-                        ? `${x},${
-                            y - 9
-                          } ${x - 5},${y} ${
-                            x + 5
-                          },${y}`
-                        : `${x},${
-                            y + 9
-                          } ${x - 5},${y} ${
-                            x + 5
-                          },${y}`
-                    }
-                    fill={color}
-                    stroke="#020617"
-                    strokeWidth={1}
-                    style={{
-                      filter: `drop-shadow(0 0 6px ${color})`,
-                    }}
-                  >
-                    <title>
-                      {`${
-                        buy
-                          ? "BUY"
-                          : "SELL"
-                      } ${fmtSymbol(
-                        trade.symbol
-                      )} @ ${fmtPrice(
-                        trade.entry_price
-                      )} · ${
-                        trade.strategy
-                          ? STRATEGY_LABELS[
-                              trade.strategy
-                            ]
-                          : ""
-                      }`}
-                    </title>
-                  </polygon>
-                </g>
-              );
-            }
-          )}
-
-          {/* X LABELS */}
-          {[
-            0,
-            Math.floor(count / 2),
-            count - 1,
-          ].map((i) => {
-            const c = candles[i];
-
-            const x =
-              padL +
-              i * cw +
-              cw / 2;
-
-            const lbl = new Date(
-              c.t
-            ).toLocaleString("en-US", {
-              month: "short",
-              day: "2-digit",
-              hour: "2-digit",
-            });
-
-            return (
-              <text
-                key={i}
-                x={x}
-                y={H - 8}
-                fontSize="10"
-                fill="#94a3b8"
-                textAnchor="middle"
-              >
-                {lbl}
-              </text>
-            );
-          })}
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-function Toolbar({
-  symbol,
-  setSymbol,
-  symbols,
-  granularity,
-  setGranularity,
-  source,
-  count,
-}: {
-  symbol: string;
-  setSymbol: (s: string) => void;
-  symbols: string[];
-
-  granularity: string;
-  setGranularity: (g: string) => void;
-
-  source: "oanda" | "preview";
-
-  count: number;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-2">
-        <Select
-          value={symbol}
-          onValueChange={setSymbol}
-        >
-          <SelectTrigger className="h-9 w-[150px] rounded-xl border-border/60 bg-[#111827] text-xs text-white">
-            <SelectValue />
-          </SelectTrigger>
-
-          <SelectContent>
-            {symbols.map((s) => (
-              <SelectItem
-                key={s}
-                value={s}
-                className="text-xs"
-              >
-                {fmtSymbol(s)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={granularity}
-          onValueChange={
-            setGranularity
-          }
-        >
-          <SelectTrigger className="h-9 w-[90px] rounded-xl border-border/60 bg-[#111827] text-xs text-white">
-            <SelectValue />
-          </SelectTrigger>
-
-          <SelectContent>
-            {GRANULARITIES.map((g) => (
-              <SelectItem
-                key={g}
-                value={g}
-                className="text-xs"
-              >
-                {g}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold text-emerald-400">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-          OANDA LIVE
-        </span>
-
-        <span className="text-[11px] text-slate-400">
-          {count} bot trades
-        </span>
-      </div>
-
-      <div className="flex items-center gap-4 text-[11px] text-slate-400">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-sm bg-emerald-500" />
-          BUY
-        </span>
-
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-sm bg-red-500" />
-          SELL
-        </span>
-      </div>
+      {/* TOOLTIP PRO */}
+      {mouse && hovered >= 0 && candles[hovered] && (
+        <div className="absolute left-6 top-6 rounded-md bg-black/80 p-2 text-xs text-white">
+          <div>O: {candles[hovered].o}</div>
+          <div>H: {candles[hovered].h}</div>
+          <div>L: {candles[hovered].l}</div>
+          <div>C: {candles[hovered].c}</div>
+        </div>
+      )}
     </div>
   );
 }
