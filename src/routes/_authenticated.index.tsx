@@ -6,7 +6,6 @@ import { api } from "../api/client";
 import { fmtCurrency, fmtPnl, fmtDate, fmtSymbol, STRATEGY_LABELS } from "../lib/format";
 import { KpiCard } from "../components/dashboard/KpiCard";
 import { ChartCard } from "../components/dashboard/ChartCard";
-import { CandleChart } from "../components/dashboard/CandleChart";
 import { KpiSkeleton, TableSkeleton } from "../components/common/Skeletons";
 import { PageHeader } from "../components/common/PageHeader";
 import { StatusPill } from "../components/common/StatusPill";
@@ -81,8 +80,6 @@ function DashboardPage() {
   const startEquity = a ? a.balance - (stats.data?.total_pnl ?? 0) : 10000;
   const recent = [...(history.data ?? [])].sort((x, y) => new Date(y.opened_at).getTime() - new Date(x.opened_at).getTime()).slice(0, 6);
   const lossPct = risk.data ? Math.min(100, (Math.abs(risk.data.portfolio_daily_loss) / (risk.data.portfolio_daily_loss_limit || 1)) * 100) : 0;
-  const open = useQuery({ queryKey: ["open-trades"], queryFn: () => api.getOpenTrades(), refetchInterval: 30_000 });
-  const allTrades = [...(open.data ?? []), ...(history.data ?? [])];
 
   return (
     <>
@@ -126,12 +123,6 @@ function DashboardPage() {
 
       <ChartCard title="Daily P&L" description="Last 14 trading days">
         {history.isLoading ? <TableSkeleton rows={4} /> : <DailyPnl trades={history.data ?? []} />}
-      </ChartCard>
-
-      <ChartCard title="Bot activity" description="Candlestick view with bot entries (▲ BUY / ▼ SELL · SL/TP marks)">
-        {history.isLoading ? <TableSkeleton rows={6} /> : (
-          <CandleChart trades={allTrades} />
-        )}
       </ChartCard>
 
       <ChartCard title="Recent Activity" description="Latest opened or closed trades">
