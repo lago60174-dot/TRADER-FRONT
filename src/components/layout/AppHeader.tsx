@@ -1,4 +1,4 @@
-import { useRouterState } from "@tanstack/react-router";
+import { useRouterState, Link } from "@tanstack/react-router";
 import { Bell, LogOut, Search, Command } from "lucide-react";
 import { SidebarTrigger } from "../ui/sidebar";
 import { Button } from "../ui/button";
@@ -52,8 +52,10 @@ export function AppHeader() {
           </span>
         </button>
 
-        <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
+        <Button asChild variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground" aria-label="Notifications">
+          <Link to="/notifications">
+            <Bell className="h-4 w-4" />
+          </Link>
         </Button>
 
         <DropdownMenu>
