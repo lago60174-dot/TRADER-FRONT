@@ -27,8 +27,14 @@ export function AppHeader() {
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border/60 bg-background/70 px-3 backdrop-blur sm:px-5">
-      <SidebarTrigger className="text-muted-foreground" />
-      <div className="ml-1 hidden text-sm sm:block">
+      <SidebarTrigger className="hidden text-muted-foreground md:inline-flex" />
+      <div className="flex items-center gap-2 md:hidden">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-[var(--shadow-elegant)]">
+          <span className="text-xs font-bold">FX</span>
+        </div>
+        <span className="text-sm font-semibold tracking-tight">Forex Terminal</span>
+      </div>
+      <div className="ml-1 hidden text-sm md:block">
         <span className="text-muted-foreground">Workspace</span>
         <span className="mx-1.5 text-muted-foreground/50">/</span>
         <span className="font-medium text-foreground">{title}</span>
