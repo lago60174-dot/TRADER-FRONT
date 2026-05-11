@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs"
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
+import { ChartCard } from "../components/dashboard/ChartCard";
+import { CandleChart } from "../components/dashboard/CandleChart";
 import type { TradeRecord } from "../types";
 
 export const Route = createFileRoute("/_authenticated/trades")({
@@ -26,6 +28,8 @@ function TradesPage() {
 
   const open = useQuery({ queryKey: ["trades-open"], queryFn: () => api.getOpenTrades(), refetchInterval: 15_000 });
   const history = useQuery({ queryKey: ["trade-history", 200], queryFn: () => api.getTradeHistory(200) });
+
+  const allTrades = [...(open.data ?? []), ...(history.data ?? [])];
 
   const filter = (rows: TradeRecord[] | undefined) =>
     (rows ?? []).filter((r) =>
@@ -44,6 +48,14 @@ function TradesPage() {
           </div>
         }
       />
+
+      <ChartCard
+        title="Live market chart"
+        description="Real OANDA candles when connected · bot entries shown as ▲ BUY / ▼ SELL with SL & TP marks."
+        className="mb-4"
+      >
+        <CandleChart trades={allTrades} />
+      </ChartCard>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as "open" | "history")}>
         <TabsList>
