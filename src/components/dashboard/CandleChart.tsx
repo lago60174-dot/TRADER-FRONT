@@ -81,11 +81,11 @@ export function CandleChart({
   const candles = (
     candlesQuery.data?.candles ?? []
   ).map((c) => ({
-    t: new Date(c.time).getTime(),
-    o: c.open,
-    h: c.high,
-    l: c.low,
-    c: c.close,
+    t: c.t,
+    o: c.o,
+    h: c.h,
+    l: c.l,
+    c: c.c,
   }));
 
   // ✅ PLUS DE source mock
