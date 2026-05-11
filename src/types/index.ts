@@ -160,17 +160,17 @@ export interface TokenResponse {
 }
 
 export interface Candle {
-  t: string; // ISO timestamp
-  o: number;
-  h: number;
-  l: number;
-  c: number;
-  v?: number;
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
 }
 
 export interface CandlesResponse {
   instrument: string;
   granularity: string;
+  count: number;
   candles: Candle[];
-  source: "oanda" | "preview";
 }
