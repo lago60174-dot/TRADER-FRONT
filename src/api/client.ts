@@ -12,6 +12,7 @@ import type {
   NotificationLog,
   SubscriptionStatus,
   TokenResponse,
+  CandlesRespons
 } from "../types";
 
 const API_BASE =
@@ -255,6 +256,12 @@ class ApiClient {
     oanda_env: string;
   }> {
     return this.get("/health");
+  }
+}
+
+  // MARKET
+  getCandles(instrument: string, granularity = "H1", count = 120): Promise<CandlesResponse> {
+    return this.get(`/market/candles?instrument=${encodeURIComponent(instrument)}&granularity=${granularity}&count=${count}`);
   }
 }
 
