@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { LogOut, Wallet } from "lucide-react";
+import { Bell, ChevronRight, LogOut, Settings as SettingsIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { api } from "../api/client";
 import { PageHeader } from "../components/common/PageHeader";
 import { ChartCard } from "../components/dashboard/ChartCard";
@@ -64,6 +65,41 @@ function ProfilePage() {
           )}
         </ChartCard>
       </div>
+
+      <ChartCard title="Preferences" description="Workspace and alerts">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Link
+            to="/notifications"
+            className="group flex items-center justify-between rounded-xl border border-border/60 bg-background/40 p-4 transition hover:border-primary/50 hover:bg-card"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                <Bell className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-foreground">Notifications</div>
+                <div className="text-xs text-muted-foreground">Push alerts &amp; reports</div>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-foreground" />
+          </Link>
+          <Link
+            to="/settings"
+            className="group flex items-center justify-between rounded-xl border border-border/60 bg-background/40 p-4 transition hover:border-primary/50 hover:bg-card"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 text-accent">
+                <SettingsIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-foreground">Settings</div>
+                <div className="text-xs text-muted-foreground">Workspace &amp; broker</div>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-foreground" />
+          </Link>
+        </div>
+      </ChartCard>
     </>
   );
 }
