@@ -12,7 +12,7 @@ import type {
   NotificationLog,
   SubscriptionStatus,
   TokenResponse,
-  CandlesRespons
+  CandlesResponse
 } from "../types";
 
 const API_BASE =
@@ -127,7 +127,9 @@ class ApiClient {
     });
   }
 
+  // =========================
   // AUTH
+  // =========================
 
   login(password: string): Promise<TokenResponse> {
     return this.post("/auth/login", {
@@ -135,7 +137,9 @@ class ApiClient {
     });
   }
 
+  // =========================
   // ACCOUNT
+  // =========================
 
   getAccount(): Promise<AccountInfo> {
     return this.get("/account");
@@ -154,7 +158,9 @@ class ApiClient {
     return this.get("/account/balance");
   }
 
+  // =========================
   // TRADES
+  // =========================
 
   getOpenTrades(): Promise<TradeRecord[]> {
     return this.get("/trades/open");
@@ -187,7 +193,9 @@ class ApiClient {
     return this.post("/trades/close", req);
   }
 
+  // =========================
   // STRATEGY
+  // =========================
 
   runStrategy(
     req: StrategyRunRequest
@@ -199,7 +207,25 @@ class ApiClient {
     return this.get("/strategy/status");
   }
 
+  // =========================
+  // MARKET
+  // =========================
+
+  getCandles(
+    instrument: string,
+    granularity = "H1",
+    count = 120
+  ): Promise<CandlesResponse> {
+    return this.get(
+      `/market/candles?instrument=${encodeURIComponent(
+        instrument
+      )}&granularity=${granularity}&count=${count}`
+    );
+  }
+
+  // =========================
   // RISK
+  // =========================
 
   getRiskStatus(): Promise<RiskStatus> {
     return this.get("/risk/status");
@@ -218,7 +244,9 @@ class ApiClient {
     return this.post("/risk/settings", updates);
   }
 
+  // =========================
   // NOTIFICATIONS
+  // =========================
 
   subscribePush(payload: {
     endpoint: string;
@@ -248,7 +276,9 @@ class ApiClient {
     );
   }
 
+  // =========================
   // HEALTH
+  // =========================
 
   health(): Promise<{
     status: string;
@@ -256,12 +286,6 @@ class ApiClient {
     oanda_env: string;
   }> {
     return this.get("/health");
-  }
-}
-
-  // MARKET
-  getCandles(instrument: string, granularity = "H1", count = 120): Promise<CandlesResponse> {
-    return this.get(`/market/candles?instrument=${encodeURIComponent(instrument)}&granularity=${granularity}&count=${count}`);
   }
 }
 
