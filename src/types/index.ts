@@ -157,7 +157,7 @@ export interface TokenResponse {
   access_token: string;
   token_type: string;
   expires_in_minutes: number;
-
+}
 
 export interface Candle {
   t: string; // ISO timestamp
