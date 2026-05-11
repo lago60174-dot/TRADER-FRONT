@@ -158,3 +158,19 @@ export interface TokenResponse {
   token_type: string;
   expires_in_minutes: number;
 }
+
+export interface Candle {
+  t: string; // ISO timestamp
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v?: number;
+}
+
+export interface CandlesResponse {
+  instrument: string;
+  granularity: string;
+  candles: Candle[];
+  source: "oanda" | "preview";
+}
