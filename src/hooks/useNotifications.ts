@@ -1,22 +1,23 @@
 /**
  * useNotifications
  *
- * Hook complet pour les push notifications Web.
+ * Hook complet pour les Web Push Notifications.
  * Basé sur DEPLOYMENT_GUIDE.md — Step 8.
  *
  * Flow :
- *   1. Récupère la clé VAPID publique depuis GET /notifications/vapid-public-key
+ *   1. Enregistre le Service Worker (/sw.js)
  *   2. Demande la permission navigateur
- *   3. Souscrit au PushManager avec la clé VAPID
- *   4. Envoie l'abonnement au backend via POST /notifications/subscribe
- *      (format { endpoint, keys: { p256dh, auth }, user_agent })
- *   5. Expose subscribe / unsubscribe / testNotification / status / logs
+ *   3. Récupère la clé VAPID depuis GET /notifications/vapid-public-key (pas d'auth requis)
+ *   4. Souscrit au PushManager avec la clé VAPID
+ *   5. Envoie l'abonnement via POST /notifications/subscribe
+ *      format backend : { endpoint, auth_key, p256dh_key, user_agent }
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../api/client";
+import type { NotificationLog, SubscriptionStatus } from "../types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,32 +28,36 @@ export interface UseNotificationsReturn {
   isSubscribed: boolean;
   /** Statut de la permission navigateur */
   permission: NotifPermission;
-  /** true pendant subscribe / unsubscribe */
+  /** true pendant subscribe / unsubscribe / test */
   isPending: boolean;
-  /** Erreur éventuelle */
+  /** Erreur courante, null si aucune */
   error: string | null;
   /** Souscrire aux push notifications */
-  subscribe: () => Promise<void>;
-  /** Se désabonner (côté navigateur uniquement — le backend supprime sur 410) */
-  unsubscribe: () => Promise<void>;
+  subscribe: () => void;
+  /** Se désabonner (navigateur + backend) */
+  unsubscribe: () => void;
   /** Envoyer une notification de test */
-  testNotification: () => Promise<void>;
+  testNotification: () => void;
   /** Logs des dernières notifications */
-  logs: ReturnType<typeof useQuery>["data"];
+  logs: NotificationLog[] | undefined;
+  /** Données de statut de la souscription */
+  status: SubscriptionStatus | undefined;
   /** true si le navigateur supporte les push */
   isSupported: boolean;
 }
 
-// ─── Helper : urlBase64 → Uint8Array (requis par PushManager.subscribe) ──────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Convertit une VAPID key base64url → Uint8Array.
+ * Requis par pushManager.subscribe({ applicationServerKey }).
+ */
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = window.atob(base64);
   return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 }
-
-// ─── Helper : vérifie le support navigateur ───────────────────────────────────
 
 function checkSupport(): boolean {
   return (
@@ -61,6 +66,30 @@ function checkSupport(): boolean {
     "serviceWorker" in navigator &&
     "PushManager" in window
   );
+}
+
+/** Enregistre /sw.js et attend qu'il soit actif. */
+async function registerSW(): Promise<ServiceWorkerRegistration> {
+  // Vérifie si déjà enregistré
+  const existing = await navigator.serviceWorker.getRegistration("/");
+  if (existing) return existing;
+
+  const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+
+  // Attend que le SW soit actif (install → activate)
+  await new Promise<void>((resolve) => {
+    if (reg.active) { resolve(); return; }
+    const target = reg.installing ?? reg.waiting;
+    if (!target) { resolve(); return; }
+    target.addEventListener("statechange", function handler() {
+      if (this.state === "activated") {
+        this.removeEventListener("statechange", handler);
+        resolve();
+      }
+    });
+  });
+
+  return reg;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -73,15 +102,16 @@ export function useNotifications(): UseNotificationsReturn {
     if (!checkSupport()) return "unsupported";
     return Notification.permission as NotifPermission;
   });
+
   const [error, setError] = useState<string | null>(null);
 
-  // Sync permission state if changed externally
+  // Sync permission si changé depuis l'extérieur
   useEffect(() => {
     if (!isSupported) return;
     setPermission(Notification.permission as NotifPermission);
   }, [isSupported]);
 
-  // ── Status & logs from backend ──────────────────────────────────────────────
+  // ── Queries ─────────────────────────────────────────────────────────────────
 
   const statusQuery = useQuery({
     queryKey: ["sub-status"],
@@ -97,82 +127,100 @@ export function useNotifications(): UseNotificationsReturn {
 
   const isSubscribed = statusQuery.data?.active ?? false;
 
-  // ── Subscribe mutation ──────────────────────────────────────────────────────
+  // ── Subscribe ────────────────────────────────────────────────────────────────
 
   const subscribeMutation = useMutation({
     mutationFn: async () => {
       setError(null);
 
       if (!isSupported) {
-        throw new Error("Push notifications are not supported in this browser.");
+        throw new Error(
+          "Push notifications ne sont pas supportées par ce navigateur."
+        );
       }
 
-      // 1. Request permission
+      // 1. Demander la permission
       const perm = await Notification.requestPermission();
       setPermission(perm as NotifPermission);
 
       if (perm !== "granted") {
         throw new Error(
           perm === "denied"
-            ? "Notification permission was denied. Please enable it in your browser settings."
-            : "Notification permission was dismissed."
+            ? "Permission refusée. Autorise les notifications dans les paramètres du navigateur."
+            : "Permission ignorée. Réessaie et clique sur 'Autoriser'."
         );
       }
 
-      // 2. Fetch VAPID public key from backend
-      //    GET /notifications/vapid-public-key → { public_key: string }
+      // 2. Enregistrer le Service Worker
+      let reg: ServiceWorkerRegistration;
+      try {
+        reg = await registerSW();
+      } catch (e) {
+        throw new Error(
+          `Échec du Service Worker: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
+
+      // 3. Récupérer la clé VAPID publique depuis le backend
+      //    GET /notifications/vapid-public-key — pas d'auth requise côté backend
+      const apiBase =
+        (import.meta.env.VITE_API_URL as string | undefined) ??
+        "https://trader-rapv.onrender.com";
+
       let vapidPublicKey: string;
       try {
-        const res = await fetch(
-          `${(import.meta.env.VITE_API_URL as string | undefined) ?? "https://trader-rapv.onrender.com"}/notifications/vapid-public-key`,
-          {
-            headers: {
-              Authorization: `Bearer ${localStorage.getItem("fx_token") ?? ""}`,
-            },
-          }
-        );
-        if (!res.ok) throw new Error(`VAPID key fetch failed: HTTP ${res.status}`);
+        const res = await fetch(`${apiBase}/notifications/vapid-public-key`);
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as { detail?: string };
+          throw new Error(err.detail ?? `HTTP ${res.status}`);
+        }
         const json = (await res.json()) as { public_key: string };
+        if (!json.public_key) throw new Error("Réponse vide du backend.");
         vapidPublicKey = json.public_key;
       } catch (e) {
         throw new Error(
-          `Cannot reach backend to get VAPID key: ${e instanceof Error ? e.message : String(e)}`
+          `Impossible de récupérer la clé VAPID: ${e instanceof Error ? e.message : String(e)}`
         );
       }
 
-      // 3. Get or create push subscription
-      const reg = await navigator.serviceWorker.ready;
+      // 4. Souscrire au PushManager avec la clé VAPID
       const existingSub = await reg.pushManager.getSubscription();
       if (existingSub) await existingSub.unsubscribe();
 
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      });
+      let sub: PushSubscription;
+      try {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        });
+      } catch (e) {
+        throw new Error(
+          `Échec de la souscription push: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
 
-      // 4. Send to backend — format from DEPLOYMENT_GUIDE Step 8
-      //    { endpoint, keys: { p256dh, auth }, user_agent }
+      // 5. Envoyer au backend — format { endpoint, auth_key, p256dh_key, user_agent }
       const subJSON = sub.toJSON() as {
         endpoint: string;
         keys?: { p256dh?: string; auth?: string };
       };
 
       if (!subJSON.keys?.p256dh || !subJSON.keys?.auth) {
-        throw new Error("Push subscription is missing encryption keys.");
+        throw new Error(
+          "La souscription push ne contient pas les clés de chiffrement (p256dh/auth)."
+        );
       }
 
       await api.subscribePush({
-        endpoint: subJSON.endpoint,
-        // Backend now accepts keys directly (DEPLOYMENT_GUIDE fix)
-        // The api.subscribePush still uses auth_key / p256dh_key for backward compat
-        auth_key: subJSON.keys.auth,
-        p256dh_key: subJSON.keys.p256dh,
-        user_agent: navigator.userAgent,
+        endpoint:    subJSON.endpoint,
+        auth_key:    subJSON.keys.auth,
+        p256dh_key:  subJSON.keys.p256dh,
+        user_agent:  navigator.userAgent,
       });
     },
 
     onSuccess: () => {
-      toast.success("Push notifications activated ✓");
+      toast.success("Notifications push activées ✓");
       qc.invalidateQueries({ queryKey: ["sub-status"] });
     },
 
@@ -182,23 +230,29 @@ export function useNotifications(): UseNotificationsReturn {
     },
   });
 
-  // ── Unsubscribe mutation ────────────────────────────────────────────────────
+  // ── Unsubscribe ──────────────────────────────────────────────────────────────
 
   const unsubscribeMutation = useMutation({
     mutationFn: async () => {
       setError(null);
 
-      if (!isSupported) return;
+      // Désabonner côté navigateur
+      if (isSupported) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) await sub.unsubscribe();
+        } catch {
+          // Non bloquant — on continue pour désactiver côté backend
+        }
+      }
 
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) await sub.unsubscribe();
-      // Backend removes the subscription automatically on the next 410/404
-      // when it tries to send a notification to an invalid endpoint.
+      // Désactiver côté backend via DELETE /notifications/unsubscribe
+      await api.unsubscribePush();
     },
 
     onSuccess: () => {
-      toast.info("Push notifications disabled.");
+      toast.info("Notifications désactivées.");
       qc.invalidateQueries({ queryKey: ["sub-status"] });
     },
 
@@ -208,33 +262,33 @@ export function useNotifications(): UseNotificationsReturn {
     },
   });
 
-  // ── Test mutation ───────────────────────────────────────────────────────────
+  // ── Test ─────────────────────────────────────────────────────────────────────
 
   const testMutation = useMutation({
     mutationFn: () => api.testNotification(),
 
     onSuccess: () => {
-      toast.success("Test notification sent.");
+      toast.success("Notification de test envoyée.");
       qc.invalidateQueries({ queryKey: ["notif-logs"] });
     },
 
     onError: (e: Error) => {
       setError(e.message);
-      toast.error(`Test failed: ${e.message}`);
+      toast.error(`Test échoué: ${e.message}`);
     },
   });
 
-  // ── Public API ──────────────────────────────────────────────────────────────
+  // ── API publique ─────────────────────────────────────────────────────────────
 
-  const subscribe = useCallback(async () => {
+  const subscribe = useCallback(() => {
     subscribeMutation.mutate();
   }, [subscribeMutation]);
 
-  const unsubscribe = useCallback(async () => {
+  const unsubscribe = useCallback(() => {
     unsubscribeMutation.mutate();
   }, [unsubscribeMutation]);
 
-  const testNotification = useCallback(async () => {
+  const testNotification = useCallback(() => {
     testMutation.mutate();
   }, [testMutation]);
 
@@ -252,6 +306,7 @@ export function useNotifications(): UseNotificationsReturn {
     unsubscribe,
     testNotification,
     logs: logsQuery.data,
+    status: statusQuery.data,
     isSupported,
   };
 }
