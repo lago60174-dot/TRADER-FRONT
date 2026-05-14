@@ -121,43 +121,57 @@ function DashboardPage() {
     onMessage: useCallback((msg) => {
       switch (msg.type) {
         case "trade_opened":
-          addLog("SUCCESS", `Trade opened: ${JSON.stringify(msg.data)}`);
+          addLog("SUCCESS", `🟢 Trade opened: ${(msg.data as {symbol?:string;direction?:string}).direction ?? ""} ${(msg.data as {symbol?:string}).symbol ?? ""}`);
           qc.invalidateQueries({ queryKey: ["trades-open"] });
           qc.invalidateQueries({ queryKey: ["account"] });
+          qc.invalidateQueries({ queryKey: ["risk"] });
           break;
         case "trade_closed":
-          addLog("INFO", `Trade closed: ${JSON.stringify(msg.data)}`);
+          addLog("INFO", `✅ Trade closed: ${(msg.data as {symbol?:string}).symbol ?? ""} PnL ${(msg.data as {pnl?:number}).pnl ?? "?"}`);
           qc.invalidateQueries({ queryKey: ["trades-open"] });
           qc.invalidateQueries({ queryKey: ["trade-history"] });
           qc.invalidateQueries({ queryKey: ["account"] });
+          qc.invalidateQueries({ queryKey: ["risk"] });
+          qc.invalidateQueries({ queryKey: ["trade-stats"] });
           break;
         case "pnl_update":
           qc.invalidateQueries({ queryKey: ["trades-open"] });
+          qc.invalidateQueries({ queryKey: ["account"] });
           break;
         case "account_update":
           qc.invalidateQueries({ queryKey: ["account"] });
           break;
+        case "open_trades":
+          qc.invalidateQueries({ queryKey: ["trades-open"] });
+          break;
+        case "risk_update":
+          qc.invalidateQueries({ queryKey: ["risk"] });
+          qc.invalidateQueries({ queryKey: ["drawdown"] });
+          break;
+        case "recent_signals":
+          qc.invalidateQueries({ queryKey: ["trade-stats"] });
+          break;
         case "log":
           addLog(
-            (msg.data.level?.toUpperCase() as LogEntry["level"]) ?? "INFO",
-            msg.data.message ?? ""
+            (msg.data.level?.toString().toUpperCase() as LogEntry["level"]) ?? "INFO",
+            msg.data.message?.toString() ?? ""
           );
           break;
         case "bot_state":
-          if (msg.data.running === false) addLog("WARNING", "Bot state changed: stopped");
+          if ((msg.data as {running?:boolean}).running === false) addLog("WARNING", "Bot state changed: stopped");
           break;
         case "notification":
-          addLog("INFO", `[Notification] ${msg.data.title}: ${msg.data.body ?? ""}`);
+          addLog("INFO", `[Notification] ${(msg.data as {title?:string}).title ?? ""}: ${(msg.data as {body?:string}).body ?? ""}`);
           break;
       }
     }, [addLog, qc]),
   });
 
-  const account = useQuery({ queryKey: ["account"], queryFn: () => api.getAccount(), refetchInterval: 30_000 });
-  const stats = useQuery({ queryKey: ["trade-stats"], queryFn: () => api.getTradeStats(), refetchInterval: 60_000 });
-  const history = useQuery({ queryKey: ["trade-history"], queryFn: () => api.getTradeHistory(200), refetchInterval: 60_000 });
-  const openTrades = useQuery({ queryKey: ["trades-open"], queryFn: () => api.getOpenTrades(), refetchInterval: 15_000 });
-  const risk = useQuery({ queryKey: ["risk"], queryFn: () => api.getRiskStatus(), refetchInterval: 30_000 });
+  const account = useQuery({ queryKey: ["account"], queryFn: () => api.getAccount(), refetchInterval: 10_000 });
+  const stats = useQuery({ queryKey: ["trade-stats"], queryFn: () => api.getTradeStats(), refetchInterval: 30_000 });
+  const history = useQuery({ queryKey: ["trade-history"], queryFn: () => api.getTradeHistory(200), refetchInterval: 30_000 });
+  const openTrades = useQuery({ queryKey: ["trades-open"], queryFn: () => api.getOpenTrades(), refetchInterval: 10_000 });
+  const risk = useQuery({ queryKey: ["risk"], queryFn: () => api.getRiskStatus(), refetchInterval: 15_000 });
 
   const a = account.data;
   const startEquity = a ? a.balance - (stats.data?.total_pnl ?? 0) : 10000;
@@ -222,7 +236,7 @@ function DashboardPage() {
                 <span className="text-xs text-slate-500">{openTrades.data?.length} active</span>
               </div>
               <div className="space-y-2">
-                {openTrades.data?.map((t) => (
+                  {openTrades.data?.map((t) => (
                   <div key={t.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-white/2 px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${t.direction === "BUY" ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
@@ -241,14 +255,17 @@ function DashboardPage() {
                         <div className="text-xs font-mono text-slate-300">{t.entry_price.toFixed(5)}</div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-slate-600 mb-0.5">SL</div>
+                        <div className="text-[10px] text-slate-600 mb-0.5">SL (trailing)</div>
                         <div className="text-xs font-mono text-red-400">{t.stop_loss.toFixed(5)}</div>
                       </div>
                       <div>
                         <div className="text-[10px] text-slate-600 mb-0.5">TP</div>
                         <div className="text-xs font-mono text-emerald-400">{t.take_profit.toFixed(5)}</div>
                       </div>
-                      <PnlValue value={t.pnl} className="text-sm font-bold min-w-[64px]" />
+                      <div>
+                        <div className="text-[10px] text-slate-600 mb-0.5">Unrealized</div>
+                        <PnlValue value={t.pnl} className="text-sm font-bold min-w-[64px]" />
+                      </div>
                     </div>
                   </div>
                 ))}
