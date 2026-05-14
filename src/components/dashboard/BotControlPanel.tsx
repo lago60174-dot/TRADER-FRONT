@@ -217,8 +217,10 @@ export function BotControlPanel({ connected, latency }: BotControlPanelProps) {
         <Clock className="h-3.5 w-3.5 text-slate-500" />
         <span className="text-[11px] text-slate-500">Scheduler</span>
         <div className="ml-auto flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[11px] text-emerald-400">Running</span>
+          <span className={`h-1.5 w-1.5 rounded-full ${connected && !isKilled ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+          <span className={`text-[11px] ${connected && !isKilled ? "text-emerald-400" : "text-red-400"}`}>
+            {connected && !isKilled ? "Running" : isKilled ? "Paused" : "Offline"}
+          </span>
         </div>
       </div>
     </div>
