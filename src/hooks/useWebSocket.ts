@@ -53,6 +53,7 @@ export function useWebSocket({ token, onMessage, enabled = true }: UseWebSocketO
         retryCount.current = 0;
         setConnected(true);
 
+        // Send ping every 10s and measure RTT via pong or heartbeat response
         pingRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             pingSentAt.current = Date.now();
@@ -67,11 +68,16 @@ export function useWebSocket({ token, onMessage, enabled = true }: UseWebSocketO
           // Normalize type to lowercase so we handle both "TRADE_OPENED" and "trade_opened"
           const msg = { ...raw, type: raw.type?.toLowerCase() } as WsMessage;
 
-          if (msg.type === "heartbeat") {
+          // Measure latency: accept both "pong" and "heartbeat" as RTT markers
+          if (msg.type === "heartbeat" || msg.type === "pong") {
             if (pingSentAt.current) {
               setLatency(Date.now() - pingSentAt.current);
               pingSentAt.current = null;
+            } else {
+              // Heartbeat arrived without a pending ping — measure from last known point
+              // Just update connected state without affecting latency display
             }
+            if (msg.type === "heartbeat") return; // don't propagate heartbeats
             return;
           }
           onMessageRef.current?.(msg);
