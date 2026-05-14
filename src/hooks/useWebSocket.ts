@@ -63,7 +63,10 @@ export function useWebSocket({ token, onMessage, enabled = true }: UseWebSocketO
 
       ws.onmessage = (ev) => {
         try {
-          const msg = JSON.parse(ev.data as string) as WsMessage;
+          const raw = JSON.parse(ev.data as string) as { type: string; data: Record<string, unknown> };
+          // Normalize type to lowercase so we handle both "TRADE_OPENED" and "trade_opened"
+          const msg = { ...raw, type: raw.type?.toLowerCase() } as WsMessage;
+
           if (msg.type === "heartbeat") {
             if (pingSentAt.current) {
               setLatency(Date.now() - pingSentAt.current);
