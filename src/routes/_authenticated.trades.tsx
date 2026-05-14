@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-query";
 
 import {
+  useCallback,
   useMemo,
   useState,
 } from "react";
@@ -66,6 +67,8 @@ import { ChartCard } from "../components/dashboard/ChartCard";
 
 import { CandleChart } from "../components/dashboard/CandleChart";
 
+import { useWebSocket } from "../hooks/useWebSocket";
+
 import type { TradeRecord } from "../types";
 
 export const Route =
@@ -82,6 +85,21 @@ function TradesPage() {
 
   const [q, setQ] = useState("");
 
+  const qc = useQueryClient();
+
+  // Real-time updates via WebSocket
+  const token = typeof window !== "undefined" ? localStorage.getItem("fx_token") : null;
+  useWebSocket({
+    token,
+    enabled: !!token,
+    onMessage: useCallback((msg) => {
+      if (msg.type === "trade_opened" || msg.type === "trade_closed" || msg.type === "open_trades") {
+        qc.invalidateQueries({ queryKey: ["trades-open"] });
+        qc.invalidateQueries({ queryKey: ["trade-history", 200] });
+      }
+    }, [qc]),
+  });
+
   const open = useQuery({
     queryKey: ["trades-open"],
 
@@ -96,6 +114,8 @@ function TradesPage() {
 
     queryFn: () =>
       api.getTradeHistory(200),
+
+    refetchInterval: 30_000,
   });
 
   const allTrades = [
