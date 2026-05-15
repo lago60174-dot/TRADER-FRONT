@@ -21,6 +21,8 @@ import {
   Activity,
   Clock3,
   BarChart3,
+  RefreshCw,
+  Target,
 } from "lucide-react";
 
 import { toast } from "sonner";
@@ -96,8 +98,26 @@ function TradesPage() {
       if (msg.type === "trade_opened" || msg.type === "trade_closed" || msg.type === "open_trades") {
         qc.invalidateQueries({ queryKey: ["trades-open"] });
         qc.invalidateQueries({ queryKey: ["trade-history", 200] });
+        qc.invalidateQueries({ queryKey: ["trade-stats"] });
       }
     }, [qc]),
+  });
+
+  const stats = useQuery({
+    queryKey: ["trade-stats"],
+    queryFn: () => api.getTradeStats(),
+    refetchInterval: 30_000,
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: () => api.syncTradesFromOanda(),
+    onSuccess: (data) => {
+      toast.success(`Sync OK — ${data.synced} trade(s) importé(s) depuis OANDA`);
+      qc.invalidateQueries({ queryKey: ["trades-open"] });
+      qc.invalidateQueries({ queryKey: ["trade-history", 200] });
+      qc.invalidateQueries({ queryKey: ["account"] });
+    },
+    onError: (e: Error) => toast.error(`Sync échoué: ${e.message}`),
   });
 
   const open = useQuery({
@@ -170,40 +190,49 @@ function TradesPage() {
       />
 
       {/* STATS */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <StatsCard
           title="Open Trades"
-          value={
-            open.data?.length ?? 0
-          }
-          icon={
-            <Activity className="h-4 w-4" />
-          }
+          value={open.data?.length ?? 0}
+          icon={<Activity className="h-4 w-4" />}
         />
-
         <StatsCard
           title="Trade History"
-          value={
-            history.data?.length ??
-            0
-          }
-          icon={
-            <Clock3 className="h-4 w-4" />
-          }
+          value={history.data?.length ?? 0}
+          icon={<Clock3 className="h-4 w-4" />}
         />
-
+        <StatsCard
+          title="Win Rate"
+          value={`${(stats.data?.win_rate ?? 0).toFixed(1)}%`}
+          icon={<Target className="h-4 w-4" />}
+          sub={`${stats.data?.wins ?? 0}W / ${stats.data?.losses ?? 0}L`}
+        />
         <StatsCard
           title="Total P&L"
-          value={
-            <PnlValue
-              value={totalPnl}
-            />
-          }
-          icon={
-            <TrendingUp className="h-4 w-4" />
-          }
+          value={<PnlValue value={totalPnl} />}
+          icon={<TrendingUp className="h-4 w-4" />}
+          sub={`Avg ${(stats.data?.avg_pnl ?? 0).toFixed(2)} / trade`}
         />
       </div>
+
+      {/* SYNC BUTTON */}
+      {(open.data?.length === 0) && (
+        <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+          <span className="text-xs text-amber-400 flex-1">
+            ⚠️ Aucun trade dans Supabase. Si OANDA a des positions ouvertes, synchronise-les ici.
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="h-8 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+          >
+            <RefreshCw className={`mr-1 h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            Sync OANDA
+          </Button>
+        </div>
+      )}
 
       {/* CHART */}
       <ChartCard
@@ -512,31 +541,21 @@ function StatsCard({
   title,
   value,
   icon,
+  sub,
 }: {
   title: string;
-
-  value:
-    | string
-    | number
-    | React.ReactNode;
-
+  value: string | number | React.ReactNode;
   icon: React.ReactNode;
+  sub?: string | React.ReactNode;
 }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-[#07101d]/70 p-5 shadow-[0_0_40px_rgba(0,0,0,0.25)] backdrop-blur-xl">
       <div className="mb-3 flex items-center justify-between">
-        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
-          {title}
-        </div>
-
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-2 text-slate-400">
-          {icon}
-        </div>
+        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">{title}</div>
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-2 text-slate-400">{icon}</div>
       </div>
-
-      <div className="text-2xl font-bold text-white">
-        {value}
-      </div>
+      <div className="text-2xl font-bold text-white">{value}</div>
+      {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
     </div>
   );
 }
