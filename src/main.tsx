@@ -11,7 +11,13 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      retry: 1,
+      // Retry 3 times on network errors, but not on 401/403/404
+      retry: (failureCount, error) => {
+        const msg = (error as Error).message ?? "";
+        if (msg.includes("Session expir") || msg.includes("401") || msg.includes("404")) return false;
+        return failureCount < 3;
+      },
+      retryDelay: (attempt) => Math.min(2000 * 2 ** attempt, 15_000), // 2s, 4s, 8s
     },
   },
 });
