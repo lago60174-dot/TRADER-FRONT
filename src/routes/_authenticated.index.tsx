@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 import {
   Wallet, TrendingUp, Target, Activity,
-  ArrowDownRight, ArrowUpRight, ChevronRight,
+  ArrowDownRight, ArrowUpRight, ChevronRight, RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid,
   Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -173,6 +174,16 @@ function DashboardPage() {
   const openTrades = useQuery({ queryKey: ["trades-open"], queryFn: () => api.getOpenTrades(), refetchInterval: 10_000 });
   const risk = useQuery({ queryKey: ["risk"], queryFn: () => api.getRiskStatus(), refetchInterval: 15_000 });
 
+  const syncMutation = useMutation({
+    mutationFn: () => api.syncTradesFromOanda(),
+    onSuccess: (data) => {
+      toast.success(`${data.synced} trade(s) synchronisé(s) depuis OANDA`);
+      qc.invalidateQueries({ queryKey: ["trades-open"] });
+      qc.invalidateQueries({ queryKey: ["account"] });
+    },
+    onError: (e: Error) => toast.error(`Sync échoué: ${e.message}`),
+  });
+
   const a = account.data;
   const startEquity = a ? a.balance - (stats.data?.total_pnl ?? 0) : 10000;
 
@@ -215,9 +226,10 @@ function DashboardPage() {
               hint={<PnlValue value={a.daily_pnl_percent} variant="percent" />} />
             <KpiCard index={2} icon={Target} tone="success" label="Win Rate"
               value={`${(stats.data?.win_rate ?? 0).toFixed(1)}%`}
-              hint={`${stats.data?.wins ?? 0}W · ${stats.data?.losses ?? 0}L`} />
+              hint={`${stats.data?.wins ?? 0}W · ${stats.data?.losses ?? 0}L · ${stats.data?.total_trades ?? 0} trades`} />
             <KpiCard index={3} icon={Activity} label="Open Trades"
-              value={`${a.open_trade_count}`} hint={`Margin ${fmtCurrency(a.margin_used)}`} />
+              value={`${a.open_trade_count}`}
+              hint={`Margin ${fmtCurrency(a.margin_used)} · Total PnL ${fmtPnl(stats.data?.total_pnl ?? 0)}`} />
           </>
         )}
       </div>
@@ -229,7 +241,7 @@ function DashboardPage() {
           <CandleChart trades={openTrades.data ?? []} />
 
           {/* Open Positions inline below chart */}
-          {(openTrades.data?.length ?? 0) > 0 && (
+          {(openTrades.data?.length ?? 0) > 0 ? (
             <div className="rounded-2xl border border-white/10 bg-[#07101d]/70 p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-semibold text-white">Open Positions</span>
@@ -271,9 +283,21 @@ function DashboardPage() {
                 ))}
               </div>
             </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+              <span className="text-xs text-amber-400 flex-1">
+                Aucun trade dans Supabase. Si OANDA a des positions, synchronise-les ici.
+              </span>
+              <button
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                className="flex items-center gap-1 h-8 px-3 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-400 text-xs hover:bg-amber-500/20 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                Sync OANDA
+              </button>
+            </div>
           )}
-
-          {/* Equity + Daily PnL */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <ChartCard title="Equity Curve" description="Portfolio growth from closed trades"
               className="border border-white/10 bg-[#07101d]/70">
