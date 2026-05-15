@@ -12,8 +12,12 @@ export type WsMessage =
   | { type: "trade_closed"; data: Record<string, unknown> }
   | { type: "pnl_update"; data: Record<string, unknown> }
   | { type: "account_update"; data: Record<string, unknown> }
-  | { type: "log"; data: { level: string; message: string; ts: string } }
+  | { type: "open_trades"; data: { trades: Record<string, unknown>[]; count: number } }
+  | { type: "recent_signals"; data: { signals: Record<string, unknown>[] } }
+  | { type: "risk_update"; data: Record<string, unknown> }
+  | { type: "kill_switch_status"; data: Record<string, unknown> }
   | { type: "bot_state"; data: { running: boolean; scheduler: boolean } }
+  | { type: "log"; data: { level: string; message: string; ts: string } }
   | { type: "notification"; data: { title: string; body: string } }
   | { type: "heartbeat"; data: Record<string, unknown> };
 
