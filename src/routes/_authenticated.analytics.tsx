@@ -16,8 +16,8 @@ export const Route = createFileRoute("/_authenticated/analytics")({
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function AnalyticsPage() {
-  const history = useQuery({ queryKey: ["trade-history-500"], queryFn: () => api.getTradeHistory(500) });
-  const stats = useQuery({ queryKey: ["trade-stats"], queryFn: () => api.getTradeStats() });
+  const history = useQuery({ queryKey: ["trade-history-500"], queryFn: () => api.getTradeHistory(500), refetchInterval: 60_000 });
+  const stats = useQuery({ queryKey: ["trade-stats"], queryFn: () => api.getTradeStats(), refetchInterval: 60_000 });
 
   const closed = useMemo(
     () => (history.data ?? []).filter((t) => t.status === "CLOSED" && t.closed_at),
