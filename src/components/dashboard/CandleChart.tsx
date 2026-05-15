@@ -195,6 +195,9 @@ export function CandleChart({
   const padT = 24;
   const padB = 36;
 
+  // Unified PADDING object used in SVG render
+  const PADDING = { l: padL, r: padR, t: padT, b: padB };
+
   const volH = 40;
 
   const innerH =
@@ -483,25 +486,37 @@ export function CandleChart({
 
   const lastPrice =
     candles.length
-      ? candles[
-          candles.length - 1
-        ].c
+      ? candles[candles.length - 1].c
       : null;
 
   const lastPriceY =
-    lastPrice !== null
-      ? yP(lastPrice)
-      : null;
+    lastPrice !== null ? yP(lastPrice) : null;
 
   const lastPriceUp =
     candles.length >= 2
-      ? candles[
-          candles.length - 1
-        ].c >=
-        candles[
-          candles.length - 2
-        ].c
+      ? candles[candles.length - 1].c >= candles[candles.length - 2].c
       : true;
+
+  // Price grid lines
+  const priceLines = useMemo(() => {
+    if (!candles.length) return [];
+    const lines = [];
+    const step = (yMax - yMin) / 5;
+    for (let i = 0; i <= 5; i++) {
+      const price = yMin + step * i;
+      lines.push({ price, y: yP(price) });
+    }
+    return lines;
+  }, [candles, yMin, yMax, yP]);
+
+  // Tooltip — candle under crosshair
+  const hoveredIdx = useMemo(() => {
+    if (!mouse || !candles.length) return -1;
+    const idx = Math.round((mouse.x - padL - panX) / (candleW || 1));
+    return idx >= 0 && idx < candles.length ? idx : -1;
+  }, [mouse, candles.length, padL, candleW, panX]);
+
+  const tooltip = hoveredIdx >= 0 ? candles[hoveredIdx] : null;
 
   if (
     !candles.length &&
@@ -670,14 +685,146 @@ export function CandleChart({
       <div
         ref={containerRef}
         className="relative w-full"
-        style={{
-          cursor: drag
-            ? "grabbing"
-            : "crosshair",
+        style={{ cursor: drag ? "grabbing" : "crosshair" }}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
         }}
+        onMouseLeave={() => setMouse(null)}
+        onMouseDown={(e) => setDrag(e.clientX)}
+        onMouseUp={() => setDrag(null)}
       >
-        {/* TON SVG RESTE IDENTIQUE */}
+        {/* Empty state when no candles and not loading */}
+        {!candles.length && !candlesQuery.isLoading && (
+          <div className="flex h-[420px] items-center justify-center text-slate-500 text-sm">
+            No candle data — backend may be unavailable
+          </div>
+        )}
+
+        {candles.length > 0 && (
+          <svg
+            ref={svgRef}
+            width={dims.w}
+            height={dims.h}
+            className="w-full"
+            viewBox={`0 0 ${dims.w} ${dims.h}`}
+          >
+            {/* Grid lines */}
+            {priceLines.map((pl) => (
+              <g key={pl.price}>
+                <line
+                  x1={PADDING.l} y1={pl.y}
+                  x2={dims.w - PADDING.r} y2={pl.y}
+                  stroke="rgba(255,255,255,0.05)" strokeWidth={1}
+                />
+                <text
+                  x={dims.w - PADDING.r + 4} y={pl.y + 4}
+                  fontSize={10} fill="rgba(148,163,184,0.7)"
+                >
+                  {pl.price.toFixed(decimals)}
+                </text>
+              </g>
+            ))}
+
+            {/* Time labels */}
+            {timeLabels.map((tl) => (
+              <text key={tl.i} x={tl.x} y={dims.h - 4}
+                fontSize={9} fill="rgba(148,163,184,0.6)" textAnchor="middle">
+                {new Date(tl.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </text>
+            ))}
+
+            {/* Candles */}
+            {candles.map((c, i) => {
+              const x = xC(i);
+              const w = Math.max(1, candleW * 0.7);
+              const isUp = c.c >= c.o;
+              const color = isUp ? "#10b981" : "#ef4444";
+              const bodyTop = yP(Math.max(c.o, c.c));
+              const bodyBot = yP(Math.min(c.o, c.c));
+              const bodyH = Math.max(1, bodyBot - bodyTop);
+              return (
+                <g key={i}>
+                  {/* Wick */}
+                  <line x1={x} y1={yP(c.h)} x2={x} y2={yP(c.l)}
+                    stroke={color} strokeWidth={1} />
+                  {/* Body */}
+                  <rect x={x - w / 2} y={bodyTop} width={w} height={bodyH}
+                    fill={color} opacity={0.85} rx={1} />
+                </g>
+              );
+            })}
+
+            {/* Open trade entry lines */}
+            {trades.filter(t => t.status === "OPEN").map((t) => {
+              const y = yP(t.entry_price);
+              if (y < PADDING.t || y > dims.h - PADDING.b) return null;
+              const color = t.direction === "BUY" ? "#10b981" : "#ef4444";
+              return (
+                <g key={t.id}>
+                  <line x1={PADDING.l} y1={y} x2={dims.w - PADDING.r} y2={y}
+                    stroke={color} strokeWidth={1} strokeDasharray="4 3" opacity={0.7} />
+                  <text x={PADDING.l + 4} y={y - 3} fontSize={9} fill={color}>
+                    {t.direction} entry {t.entry_price.toFixed(decimals)}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Last price line */}
+            {lastPriceY !== null && (
+              <g>
+                <line
+                  x1={PADDING.l} y1={lastPriceY}
+                  x2={dims.w - PADDING.r} y2={lastPriceY}
+                  stroke={lastPriceUp ? "#10b981" : "#ef4444"}
+                  strokeWidth={1} strokeDasharray="2 2" opacity={0.5}
+                />
+                <rect
+                  x={dims.w - PADDING.r + 2} y={lastPriceY - 9}
+                  width={58} height={16} rx={3}
+                  fill={lastPriceUp ? "#10b981" : "#ef4444"}
+                />
+                <text
+                  x={dims.w - PADDING.r + 31} y={lastPriceY + 3}
+                  fontSize={10} fill="white" textAnchor="middle" fontWeight="bold"
+                >
+                  {lastPrice?.toFixed(decimals)}
+                </text>
+              </g>
+            )}
+
+            {/* Crosshair */}
+            {mouse && (
+              <g opacity={0.4}>
+                <line x1={mouse.x} y1={PADDING.t} x2={mouse.x} y2={dims.h - PADDING.b}
+                  stroke="white" strokeWidth={1} strokeDasharray="3 3" />
+                <line x1={PADDING.l} y1={mouse.y} x2={dims.w - PADDING.r} y2={mouse.y}
+                  stroke="white" strokeWidth={1} strokeDasharray="3 3" />
+              </g>
+            )}
+          </svg>
+        )}
+
+        {/* Tooltip */}
+        {tooltip && mouse && (
+          <div
+            className="pointer-events-none absolute rounded-xl border border-white/10 bg-[#0b1628]/95 p-3 text-xs shadow-2xl backdrop-blur"
+            style={{ left: Math.min(mouse.x + 12, dims.w - 160), top: Math.max(mouse.y - 80, 0) }}
+          >
+            <div className="mb-1 font-semibold text-slate-300">
+              {new Date(tooltip.t).toLocaleString()}
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-slate-400">
+              <span>O</span><span className="text-right font-mono text-white">{tooltip.o.toFixed(decimals)}</span>
+              <span>H</span><span className="text-right font-mono text-emerald-400">{tooltip.h.toFixed(decimals)}</span>
+              <span>L</span><span className="text-right font-mono text-red-400">{tooltip.l.toFixed(decimals)}</span>
+              <span>C</span><span className="text-right font-mono text-white">{tooltip.c.toFixed(decimals)}</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
