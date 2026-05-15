@@ -58,14 +58,18 @@ class ApiClient {
         },
       });
     } catch (error) {
-      console.error("API request failed:", error);
-      throw new Error("Backend unavailable");
+      // Network error — backend asleep or unreachable
+      const msg = (error as Error).message ?? "";
+      if (msg.includes("fetch") || msg.includes("network") || msg.includes("Failed")) {
+        throw new Error("Backend indisponible — Render est peut-être en train de démarrer (30s). Réessaie dans quelques secondes.");
+      }
+      throw new Error("Erreur réseau");
     }
 
     if (response.status === 401) {
       this.clearToken();
       if (isBrowser) window.location.assign("/login");
-      throw new Error("Unauthorized");
+      throw new Error("Session expirée — reconnecte-toi.");
     }
 
     let data: unknown;
@@ -152,3 +156,4 @@ class ApiClient {
 }
 
 export const api = new ApiClient();
+
