@@ -20,8 +20,8 @@ export const Route = createFileRoute("/_authenticated/risk")({
 });
 
 function RiskPage() {
-  const status = useQuery({ queryKey: ["risk"], queryFn: () => api.getRiskStatus(), refetchInterval: 20_000 });
-  const settings = useQuery({ queryKey: ["risk-settings"], queryFn: () => api.getRiskSettings() });
+  const status = useQuery({ queryKey: ["risk"], queryFn: () => api.getRiskStatus(), refetchInterval: 15_000 });
+  const settings = useQuery({ queryKey: ["risk-settings"], queryFn: () => api.getRiskSettings(), refetchInterval: 60_000 });
   const qc = useQueryClient();
 
   const [form, setForm] = useState<RiskSettingsUpdate>({});
