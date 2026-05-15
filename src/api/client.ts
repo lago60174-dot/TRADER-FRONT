@@ -104,6 +104,9 @@ class ApiClient {
   getTradeStats(): Promise<TradeStats> { return this.get("/trades/stats/summary"); }
   openTrade(req: TradeOpenRequest): Promise<TradeRecord> { return this.post("/trades/open", req); }
   closeTrade(req: TradeCloseRequest): Promise<TradeRecord> { return this.post("/trades/close", req); }
+  syncTradesFromOanda(): Promise<{ synced: number; already_in_db: number; total_oanda_trades: number }> {
+    return this.post("/trades/sync-from-oanda");
+  }
 
   // STRATEGY
   runStrategy(req: StrategyRunRequest): Promise<TradingSignal> { return this.post("/strategy/run", req); }
