@@ -171,6 +171,6 @@ export interface Candle {
 export interface CandlesResponse {
   instrument: string;
   granularity: string;
-  count: number;
+  source: "oanda" | "preview";
   candles: Candle[];
 }
