@@ -116,46 +116,26 @@ export function CandleChart({
     refetchInterval: 30_000,
   });
 
-  // ✅ SAFE CANDLES
+  // ✅ SAFE CANDLES — backend now returns time/open/high/low/close directly
   const candles = useMemo(
     () =>
-      (
-        candlesQuery.data?.candles ?? []
-      )
+      (candlesQuery.data?.candles ?? [])
         .map((c: any) => ({
-          t:
-            c.time ??
-            c.t ??
-            Date.now(),
-
-          o: Number(
-            c.open ?? c.o ?? 0
-          ),
-
-          h: Number(
-            c.high ?? c.h ?? 0
-          ),
-
-          l: Number(
-            c.low ?? c.l ?? 0
-          ),
-
-          c: Number(
-            c.close ?? c.c ?? 0
-          ),
-
-          v: Number(
-            c.volume ?? c.v ?? 0
-          ),
+          t: c.time ?? c.t ?? "",
+          o: Number(c.open ?? c.o ?? 0),
+          h: Number(c.high ?? c.h ?? 0),
+          l: Number(c.low  ?? c.l ?? 0),
+          c: Number(c.close ?? c.c ?? 0),
+          v: Number(c.volume ?? c.v ?? 0),
         }))
         .filter(
           (c) =>
+            c.t !== "" &&
             Number.isFinite(c.o) &&
             Number.isFinite(c.h) &&
             Number.isFinite(c.l) &&
             Number.isFinite(c.c)
         ),
-
     [candlesQuery.data]
   );
 
@@ -827,4 +807,3 @@ export function CandleChart({
     </div>
   );
 }
-
