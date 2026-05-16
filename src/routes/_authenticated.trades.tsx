@@ -97,7 +97,7 @@ function TradesPage() {
     onMessage: useCallback((msg) => {
       if (msg.type === "trade_opened" || msg.type === "trade_closed" || msg.type === "open_trades") {
         qc.invalidateQueries({ queryKey: ["trades-open"] });
-        qc.invalidateQueries({ queryKey: ["trade-history", 200] });
+        qc.invalidateQueries({ queryKey: ["trade-history"] });
         qc.invalidateQueries({ queryKey: ["trade-stats"] });
       }
     }, [qc]),
@@ -112,12 +112,24 @@ function TradesPage() {
   const syncMutation = useMutation({
     mutationFn: () => api.syncTradesFromOanda(),
     onSuccess: (data) => {
-      toast.success(`Sync OK — ${data.synced} trade(s) importé(s) depuis OANDA`);
+      toast.success(`Sync OK — ${data.synced} trade(s) ouvert(s) importé(s) depuis OANDA`);
       qc.invalidateQueries({ queryKey: ["trades-open"] });
-      qc.invalidateQueries({ queryKey: ["trade-history", 200] });
+      qc.invalidateQueries({ queryKey: ["trade-history"] });
       qc.invalidateQueries({ queryKey: ["account"] });
     },
     onError: (e: Error) => toast.error(`Sync échoué: ${e.message}`),
+  });
+
+  const syncClosedMutation = useMutation({
+    mutationFn: () => api.syncClosedTradesFromOanda(90),
+    onSuccess: (data) => {
+      toast.success(`${data.synced} trade(s) fermé(s) importé(s) — win rate et historique mis à jour`);
+      qc.invalidateQueries({ queryKey: ["trade-history"] });
+      qc.invalidateQueries({ queryKey: ["trade-stats"] });
+      qc.invalidateQueries({ queryKey: ["account"] });
+      qc.invalidateQueries({ queryKey: ["risk"] });
+    },
+    onError: (e: Error) => toast.error(`Sync historique échoué: ${e.message}`),
   });
 
   const open = useQuery({
@@ -130,7 +142,7 @@ function TradesPage() {
   });
 
   const history = useQuery({
-    queryKey: ["trade-history", 200],
+    queryKey: ["trade-history"],
 
     queryFn: () =>
       api.getTradeHistory(200),
@@ -215,24 +227,41 @@ function TradesPage() {
         />
       </div>
 
-      {/* SYNC BUTTON */}
-      {(open.data?.length === 0) && (
-        <div className="flex items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
-          <span className="text-xs text-amber-400 flex-1">
-            ⚠️ Aucun trade dans Supabase. Si OANDA a des positions ouvertes, synchronise-les ici.
+      {/* SYNC BUTTONS */}
+      <div className="flex flex-wrap gap-3">
+        {(open.data?.length === 0) && (
+          <div className="flex items-center gap-3 flex-1 rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+            <span className="text-xs text-amber-400 flex-1">
+              ⚠️ Aucun trade ouvert dans Supabase. Synchronise les positions OANDA.
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              className="h-8 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+            >
+              <RefreshCw className={`mr-1 h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              Sync positions ouvertes
+            </Button>
+          </div>
+        )}
+        <div className="flex items-center gap-3 rounded-2xl border border-blue-500/20 bg-blue-500/5 px-4 py-3">
+          <span className="text-xs text-blue-400 flex-1">
+            Importer l'historique des 90 derniers jours depuis OANDA pour calculer le win rate et l'equity curve.
           </span>
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            className="h-8 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+            onClick={() => syncClosedMutation.mutate()}
+            disabled={syncClosedMutation.isPending}
+            className="h-8 rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
           >
-            <RefreshCw className={`mr-1 h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            Sync OANDA
+            <RefreshCw className={`mr-1 h-3 w-3 ${syncClosedMutation.isPending ? "animate-spin" : ""}`} />
+            Sync historique (90j)
           </Button>
         </div>
-      )}
+      </div>
 
       {/* CHART */}
       <ChartCard
