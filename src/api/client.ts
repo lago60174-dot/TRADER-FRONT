@@ -111,6 +111,9 @@ class ApiClient {
   syncTradesFromOanda(): Promise<{ synced: number; already_in_db: number; total_oanda_trades: number }> {
     return this.post("/trades/sync-from-oanda");
   }
+  syncClosedTradesFromOanda(days = 30): Promise<{ synced: number; already_in_db: number; total_closed_oanda: number }> {
+    return this.post(`/trades/sync-closed-from-oanda?days=${days}`);
+  }
 
   // STRATEGY
   runStrategy(req: StrategyRunRequest): Promise<TradingSignal> { return this.post("/strategy/run", req); }
